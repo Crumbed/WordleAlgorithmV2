@@ -1,41 +1,93 @@
 #![feature(linked_list_retain)]
 
 
-use std::{collections::{HashMap, LinkedList}, io::Write};
+use std::io::{stdin, stdout, Write};
 use std::io;
 
+use termion::{self, cursor};
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::screen::IntoAlternateScreen;
+use termion::raw::IntoRawMode;
 
 use crate::game::GameState;
+use ui::UI;
 
 mod game;
+mod ui;
 
 
-
-
-fn main() {
-    let mut state = GameState::new();
-    println!("Welcome to the Wordle Solver!");
-
-    let mut buffer = String::with_capacity(5);
-    'main : loop {
-        let guess = state.get_guess(buffer.trim().as_bytes());
-        buffer.clear();
-        println!("\nGuess: {}", guess);
-        loop {
-            print!("Please enter results (b: gray, y: yellow, g: green, q: exit) : ");
-            let _ = io::stdout().flush();
-            io::stdin()
-                .read_line(&mut buffer)
-                .expect("Failed to read input");
-            buffer = buffer.trim().into();
-            println!("{buffer}");
-
-            if buffer.starts_with('q') { break 'main; }
-            if buffer.trim().len() == 5 { break; } 
-            println!("Please enter 5 characters");
+macro_rules! color {
+    [$c: expr] => {
+        match $c {
+        0 => b'g',
+        1 => b'y',
+        2 => b'b',
+        _ => b' '
         }
-
     }
+}
+
+
+fn main() -> io::Result<()> {
+    let mut out = stdout()
+        .into_raw_mode()
+        .expect("Error entering raw mode")
+        .into_alternate_screen()
+        .expect("Error entering alternate buffer");
+    write!(&mut out, "{}", cursor::Hide)?;
+
+    let mut state = GameState::new();
+    let mut ui = UI::new(&mut out);
+    let mut keys = stdin().keys();
+
+    let mut buffer = [b' '; 5];
+    'main : loop {
+        let guess = state.get_guess(&buffer);
+        buffer = [b' '; 5];
+        let mut i = 0;
+        let mut selected = 0;
+
+        ui.draw(guess.as_bytes(), &buffer).unwrap();
+        ui.stdout.flush()?;
+        while let Some(Ok(c)) = keys.next() {
+            match c {
+                Key::Left       | Key::Char('h') if selected > 0 => {
+                    ui.draw_color(color![selected], false)?;
+                    selected -= 1;
+                    ui.draw_color(color![selected], true)?;
+                },
+
+                Key::Right      | Key::Char('l') if selected < 2 => {
+                    ui.draw_color(color![selected], false)?;
+                    selected += 1;
+                    ui.draw_color(color![selected], true)?;
+                },
+
+                Key::Char(' ')  | Key::Char('\n') => if i != 5 {
+                    buffer[i] = color![selected];
+                    ui.draw_guess(guess.as_bytes(), &buffer)?;
+                    i += 1;
+                } else { break; },
+
+                Key::Backspace if i > 0 => {
+                    buffer[i - 1] = b' ';
+                    ui.draw_guess(guess.as_bytes(), &buffer)?;
+                    i -= 1;
+                },
+
+                Key::Char('q') | Key::Esc => break 'main,
+
+                _ => ()
+            }
+
+            ui.stdout.flush()?;
+        }
+    }
+
+    ui.stdout.suspend_raw_mode()?;
+    write!(ui.stdout, "{}", cursor::Show)?;
+    Ok(())
 }
 
 
@@ -57,7 +109,7 @@ impl FilterNode {
             }
             FilterNode::Here(b, i) => {
                 let c = *b as char;
-                word.as_bytes()[*i] == *b && word.contains(*b as char)
+                word.as_bytes()[*i] == *b && word.contains(c)
             }
         };
     }
