@@ -13,9 +13,10 @@ use termion::{cursor::Goto, raw::RawTerminal};
 
 
 pub struct UI<'a> {
-    pub stdout: &'a mut RawTerminal<Stdout>,
-    guess_start: (u16, u16),
-    color_start: (u16, u16)
+    pub stdout      : &'a mut RawTerminal<Stdout>,
+    guess_start     : (u16, u16),
+    color_start     : (u16, u16),
+    loading_start   : (u16, u16),
 }
 
 impl<'a> UI<'a> {
@@ -24,10 +25,14 @@ impl<'a> UI<'a> {
             .expect("womp womp");
         let mut guess_start = (0, 0);
         let mut color_start = (0, 0);
+        let mut loading_start = (0, 0);
 
         let center = (size.0 / 2, size.1 / 2);
         color_start.0 = center.0 - 8;
-        color_start.1 = center.1 + 1;
+        color_start.1 = center.1 + 2;
+
+        loading_start.0 = center.0 - 11;
+        loading_start.1 = center.1;
 
         guess_start.0 = center.0 - 7;
         guess_start.1 = center.1 - 5;
@@ -36,12 +41,18 @@ impl<'a> UI<'a> {
         return Self {
             stdout,
             guess_start,
-            color_start
+            color_start,
+            loading_start,
         };
     }
 
-    pub fn draw(&mut self, guess: &[u8], colors: &[u8; 5]) -> io::Result<()> {
+    pub fn draw(&mut self, guess: &[u8], colors: &[u8; 5], possible_guesses: usize) -> io::Result<()> {
         self.draw_guess(guess, colors)?;
+        write!(self.stdout, "{}{}{}Remaining: {possible_guesses}", 
+            Goto(self.color_start.0, self.color_start.1 - 1),
+            termion::clear::CurrentLine,
+            termion::color::Bg(termion::color::Reset)
+        )?;
         self.draw_color(b'g', true)?;
         self.draw_color(b'y', false)?;
         self.draw_color(b'b', false)?;
@@ -85,14 +96,35 @@ impl<'a> UI<'a> {
                 _ => termion::color::Bg(termion::color::Reset).to_string()
             };
 
-            write!(self.stdout, "{}{}┌─┐{}│{}│{}└─┘", 
+            write!(self.stdout, "{}{}┌─┐{}│{}│{}└─┘{}{} {}", 
                 Goto(self.guess_start.0 + i as u16 * 3, self.guess_start.1),
                 c,
                 Goto(self.guess_start.0 + i as u16 * 3, self.guess_start.1 + 1),
-                guess[i] as char,
+                (guess[i] as char).to_uppercase(),
                 Goto(self.guess_start.0 + i as u16 * 3, self.guess_start.1 + 2),
+                termion::color::Bg(termion::color::Reset),
+                Goto(self.guess_start.0 + i as u16 * 3, self.guess_start.1 + 3),
+                (colors[i] as char).to_uppercase()
             )?;
         }
+
+        Ok(())
+    }
+
+    /*
+    * progress should be between 0 - 10
+    */
+    pub fn draw_loading_bar(&mut self, progress: usize) -> io::Result<()> {
+        /*
+        let mut bar = "██".repeat(progress);
+        bar.push_str(&"·".repeat(20 - progress * 2));
+
+        write!(self.stdout, "{}{}[{}]",
+            Goto(self.loading_start.0, self.loading_start.1),
+            termion::color::Bg(termion::color::Reset),
+            bar
+        )?;
+*/
 
         Ok(())
     }

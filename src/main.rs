@@ -4,6 +4,7 @@
 use std::io::{stdin, stdout, Write};
 use std::io;
 
+use game::WORDS;
 use termion::{self, cursor};
 use termion::event::Key;
 use termion::input::TermRead;
@@ -28,27 +29,43 @@ macro_rules! color {
     }
 }
 
+fn test() {
+    let words = WORDS.iter().filter(|&w| {
+        if !w.contains('s') || !w.contains('u') || !w.contains('i') { return false; }
+        for c in ['a', 'l', 'e', 't', 'b', 'h', 'y', 'f', 'm', 'v', 'c', 'n', 'r'] {
+            if w.contains(c) { return false; }
+        }
+
+        true
+    });
+
+    for word in words {
+        println!("{word}");
+    }
+}
 
 fn main() -> io::Result<()> {
     let mut out = stdout()
         .into_raw_mode()
-        .expect("Error entering raw mode")
-        .into_alternate_screen()
-        .expect("Error entering alternate buffer");
+        .expect("Error entering raw mode");
+        //.into_alternate_screen()
+        //.expect("Error entering alternate buffer");
     write!(&mut out, "{}", cursor::Hide)?;
-
-    let mut state = GameState::new();
     let mut ui = UI::new(&mut out);
+    let mut state = GameState::new();
     let mut keys = stdin().keys();
+    let mut last_guess: String = "salet".into();
 
     let mut buffer = [b' '; 5];
     'main : loop {
-        let guess = state.get_guess(&buffer);
+        let guess = state.get_guess(&buffer, &last_guess);
+        last_guess = guess.clone();
+        state = state.recalc();
         buffer = [b' '; 5];
         let mut i = 0;
         let mut selected = 0;
 
-        ui.draw(guess.as_bytes(), &buffer).unwrap();
+        ui.draw(guess.as_bytes(), &buffer, state.pos_ans()).unwrap();
         ui.stdout.flush()?;
         while let Some(Ok(c)) = keys.next() {
             match c {
@@ -102,15 +119,12 @@ pub enum FilterNode {
 impl FilterNode {
     pub fn filter(&self, word: &str) -> bool {
         return match self {
-            FilterNode::None(b) => !word.contains(*b as char),
+            FilterNode::None(b) => word.contains(*b as char),
             FilterNode::NotN(b, i) => {
                 let c = *b as char;
-                word.as_bytes()[*i] != *b && word.contains(c)
-            }
-            FilterNode::Here(b, i) => {
-                let c = *b as char;
-                word.as_bytes()[*i] == *b && word.contains(c)
-            }
+                word.as_bytes()[*i] == *b || !word.contains(c)
+            },
+            FilterNode::Here(b, i) => word.as_bytes()[*i] != *b
         };
     }
 }
