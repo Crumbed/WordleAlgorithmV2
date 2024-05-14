@@ -29,20 +29,6 @@ macro_rules! color {
     }
 }
 
-fn test() {
-    let words = WORDS.iter().filter(|&w| {
-        if !w.contains('s') || !w.contains('u') || !w.contains('i') { return false; }
-        for c in ['a', 'l', 'e', 't', 'b', 'h', 'y', 'f', 'm', 'v', 'c', 'n', 'r'] {
-            if w.contains(c) { return false; }
-        }
-
-        true
-    });
-
-    for word in words {
-        println!("{word}");
-    }
-}
 
 fn main() -> io::Result<()> {
     let mut out = stdout()

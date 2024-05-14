@@ -23,12 +23,14 @@ struct Word {
     score: f64,
 }
 
+const SWP_LEN: usize = 1000;
 
 pub struct GameState {
-    single  :   [[f64; 2]; 27], 
-    patterns:   HashMap<[u8; 2], f64>, 
-    pos_ans :   LinkedList<Word>, 
-    guess   :   u8
+    single      : [[f64; 2]; 27], 
+    patterns    : HashMap<[u8; 2], f64>, 
+    pos_ans     : LinkedList<Word>, 
+    real_words  : LinkedList<Word>,
+    guess       : u8
 }
 
 impl GameState {
@@ -38,7 +40,10 @@ impl GameState {
         let mut this = GameState { 
             single: [[0.0; 2]; 27],
             patterns: HashMap::new(),
-            pos_ans: WORDS.iter().map(|&word| {
+            pos_ans: ALL_WORDS.iter().map(|&word| {
+                Word { word, score: 0. }
+            }).collect(),
+            real_words: WORDS.iter().map(|&word| {
                 Word { word, score: 0. }
             }).collect(),
             guess: 1
@@ -62,7 +67,13 @@ impl GameState {
         let mut ll_count = [0; 27];
         let mut combo_count = HashMap::<[u8; 2], i32>::new();
 
-        self.pos_ans.iter().for_each(|&word| {
+        let words = if self.pos_ans.len() < SWP_LEN && !self.real_words.is_empty() {
+            &mut self.real_words
+        } else {
+            &mut self.pos_ans
+        };
+
+        words.iter().for_each(|&word| {
             let bytes = word.word.as_bytes();
             for b in 0..bytes.len() - 1 {
                 let combo = [bytes[b], bytes[b + 1]];
@@ -77,13 +88,14 @@ impl GameState {
             ll_count[i![*ll]] += 1;
         });
 
-        let weight = (self.pos_ans.len() / 2) as f64;
+        let weight = (words.len() / 2) as f64;
         for i in i![b'a']..=i![b'z'] {
             self.single[i][FL] = fl_count[i] as f64 / weight;
             self.single[i][LL] = ll_count[i] as f64 / weight;
         }
 
-        let weight = (self.pos_ans.len() / 5) as f64;
+        let weight = (words.len() / 5) as f64;
+
         combo_count.iter().for_each(|(&combo, &count)| {
             self.patterns.insert(combo, count as f64 / weight);
         });
@@ -92,18 +104,30 @@ impl GameState {
     }
 
     fn sort_words(&mut self) {
-        let mut swap_buf = LinkedList::new();
-        std::mem::swap(&mut self.pos_ans, &mut swap_buf);
-        let mut words: Vec<Word> = swap_buf.into_iter().collect();
+        let ans: &mut LinkedList<Word>;
+        let mut words: Vec<Word> = {
+            let mut swap_buf = LinkedList::new();
+            if self.pos_ans.len() < SWP_LEN && !self.real_words.is_empty() {
+                std::mem::swap(&mut self.real_words, &mut swap_buf);
+                ans = &mut self.real_words;
+            } else {
+                std::mem::swap(&mut self.pos_ans, &mut swap_buf);
+                ans = &mut self.pos_ans;
+            }
+
+            swap_buf.into_iter().collect()
+        };
+
         for word in &mut words {
             let bytes = word.word.as_bytes();
+
             word.score = bytes.windows(2).map(|combo| {
                 self.patterns.get(combo).unwrap_or(&0.0)
             }).sum::<f64>() + self.single[i![bytes[0]]][FL] + self.single[i![bytes[4]]][LL];
         }
 
         words.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        self.pos_ans = words.into_iter().collect();
+        *ans = words.into_iter().collect();
     }
 
     pub fn get_guess(&mut self, bytes: &[u8], last_guess: &str) -> String {
@@ -111,6 +135,14 @@ impl GameState {
             self.guess += 1;
             return self.pos_ans.front().unwrap().word.into();
         }
+
+        let words = if self.pos_ans.len() < SWP_LEN && !self.real_words.is_empty() {
+            &mut self.real_words
+        } else {
+            &mut self.pos_ans
+        };
+
+
 
         let last_guess = last_guess.as_bytes();
         let mut filter = [FilterNode::None(b' '); 5];
@@ -124,7 +156,7 @@ impl GameState {
             };
         }
 
-        self.pos_ans.retain(|word| {
+        words.retain(|word| {
             for f in filter {
                 if f.filter(word.word) {
                     return false;
@@ -136,7 +168,7 @@ impl GameState {
 
 
         self.guess += 1;
-        return self.pos_ans.front().unwrap().word.into();
+        return words.front().unwrap().word.into();
     }
 
     pub fn pos_ans(&self) -> usize {
